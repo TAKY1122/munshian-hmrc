@@ -16,7 +16,7 @@ HMRC keys (client ID, secret, redirect address) are **not** kept here. Each app 
 In the app's `package.json`:
 
 ```json
-"munshian-hmrc": "https://codeload.github.com/TAKY1122/munshian-hmrc/tar.gz/refs/tags/v1.0.0"
+"munshian-hmrc": "https://codeload.github.com/TAKY1122/munshian-hmrc/tar.gz/<commit>"
 ```
 
 ```js
@@ -26,8 +26,7 @@ const client = hmrc.createClient({ ...hmrc.HOSTS.sandbox, clientId, clientSecret
 
 ## Making a change
 
-1. Change the code here, run `npm test`, and raise the version in `package.json` (1.0.0 → 1.0.1 for a fix, 1.1.0 for something new).
-2. Tag the release, e.g. `v1.0.1`.
-3. In each app, change the tag at the end of the `munshian-hmrc` address in `package.json`, run `npm install`, test, and deploy.
+1. Change the code here, run `npm test`, raise the version in `package.json` (1.0.0 → 1.0.1 for a fix, 1.1.0 for something new) and merge to `main`.
+2. In each app, put the new commit's ID at the end of the `munshian-hmrc` address in `package.json`, run `npm install`, test, and deploy.
 
-An app keeps the version it was built with until step 3, so a change here never alters a live app by surprise.
+Each app is pinned to an exact commit, so a change here never alters a live app by surprise: the app moves only at step 2.
