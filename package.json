@@ -1,0 +1,17 @@
+{
+  "name": "munshian-hmrc",
+  "version": "1.0.0",
+  "description": "Shared HMRC Making Tax Digital VAT code for the Munshian apps",
+  "main": "index.js",
+  "files": ["index.js", "src", "browser"],
+  "engines": {
+    "node": ">=20.12"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "pdfkit": "^0.20.2"
+  },
+  "license": "UNLICENSED"
+}
