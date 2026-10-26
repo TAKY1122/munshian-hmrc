@@ -17,6 +17,18 @@ class HmrcError extends Error {
 }
 
 function createClient(settings) {
+  function assertSandbox(action) {
+    let host = '';
+    try {
+      host = new URL(settings.apiBase).hostname;
+    } catch {
+      host = '';
+    }
+    if (host === 'api.service.hmrc.gov.uk') {
+      throw new Error(`${action} only works against the HMRC sandbox, not the live API`);
+    }
+  }
+
   function authorizeUrl(state) {
     const params = new URLSearchParams({
       response_type: 'code',
@@ -160,6 +172,7 @@ function createClient(settings) {
 
   // Sandbox only. Needs the "Create Test User" API added to the sandbox app.
   async function createTestUser(kind, serviceNames) {
+    assertSandbox('Creating a test user');
     const { accessToken } = await applicationToken();
     const res = await fetch(`${settings.apiBase}/create-test-user/${kind}`, {
       method: 'POST',
@@ -187,6 +200,7 @@ function createClient(settings) {
   // Sandbox only: accepts an invitation as if the client had approved it.
   // The Agent Authorisation Test Support API is open access, so no token or subscription is needed.
   async function acceptTestInvitation(invitationId) {
+    assertSandbox('Accepting a test invitation');
     const res = await fetch(`${settings.apiBase}/agent-authorisation-test-support/invitations/${encodeURIComponent(invitationId)}`, {
       method: 'PUT',
       headers: { Accept: 'application/vnd.hmrc.1.0+json' },
@@ -195,7 +209,8 @@ function createClient(settings) {
   }
 
   // Sandbox only. Needs the "Test Fraud Prevention Headers" API added to the sandbox app.
-  function validateFraudHeaders(opts) {
+  async function validateFraudHeaders(opts) {
+    assertSandbox('Checking fraud-prevention headers');
     return apiGet('/test/fraud-prevention-headers/validate', opts);
   }
 

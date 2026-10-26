@@ -34,6 +34,28 @@ test('submits a return with the receipt headers and reports HMRC errors', async 
   });
 });
 
+test('refuses sandbox helpers against the live HMRC API', async () => {
+  const orig = global.fetch;
+  let calls = 0;
+  global.fetch = async () => {
+    calls += 1;
+    return new Response('{}', { status: 200 });
+  };
+  const live = hmrc.createClient({ ...settings, ...hmrc.HOSTS.production });
+  const sandbox = hmrc.createClient(settings);
+  try {
+    await assert.rejects(() => live.createTestAgent(), /sandbox/);
+    await assert.rejects(() => live.createTestVatClient(), /sandbox/);
+    await assert.rejects(() => live.acceptTestInvitation('ABC'), /sandbox/);
+    await assert.rejects(() => live.validateFraudHeaders({ accessToken: 't' }), /sandbox/);
+    assert.strictEqual(calls, 0);
+    await sandbox.acceptTestInvitation('ABC');
+    assert.strictEqual(calls, 1);
+  } finally {
+    global.fetch = orig;
+  }
+});
+
 test('reads browser details for the fraud headers', () => {
   const d = hmrc.readDevice({ timezoneOffset: -60, screen: { width: '1920', height: 1080 }, userAgent: 'UA', doNotTrack: true });
   assert.deepStrictEqual([d.timezone, d.screen.width, d.userAgent, d.doNotTrack], ['UTC+01:00', 1920, 'UA', true]);
