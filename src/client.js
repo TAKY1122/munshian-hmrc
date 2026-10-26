@@ -1,5 +1,6 @@
 // HMRC's Making Tax Digital VAT API: sign-in (OAuth), obligations, returns, liabilities and payments.
-// settings: { apiBase, authBase, clientId, clientSecret, redirectUri, scopes, agentAuthVersion ('2.0' or '1.0') }.
+// settings: { apiBase, authBase, clientId, clientSecret, redirectUri, scopes, agentAuthVersion ('2.0' or '1.0'), timeoutMs }.
+// timeoutMs defaults to 20 seconds. Pass 0 to wait with no limit.
 // HOSTS has the sandbox and live addresses for apiBase and authBase.
 
 const HOSTS = {
@@ -17,6 +18,13 @@ class HmrcError extends Error {
 }
 
 function createClient(settings) {
+  const timeoutMs = settings.timeoutMs === undefined ? 20000 : settings.timeoutMs;
+
+  function hmrcFetch(url, opts = {}) {
+    if (!timeoutMs || opts.signal) return fetch(url, opts);
+    return fetch(url, { ...opts, signal: AbortSignal.timeout(timeoutMs) });
+  }
+
   function authorizeUrl(state) {
     const params = new URLSearchParams({
       response_type: 'code',
@@ -29,7 +37,7 @@ function createClient(settings) {
   }
 
   async function tokenRequest(fields) {
-    const res = await fetch(`${settings.apiBase}/oauth/token`, {
+    const res = await hmrcFetch(`${settings.apiBase}/oauth/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ client_id: settings.clientId, client_secret: settings.clientSecret, ...fields }),
@@ -55,7 +63,7 @@ function createClient(settings) {
   async function apiGet(path, { accessToken, fraudHeaders, testScenario }) {
     const headers = { Accept: 'application/vnd.hmrc.1.0+json', Authorization: `Bearer ${accessToken}`, ...fraudHeaders };
     if (testScenario) headers['Gov-Test-Scenario'] = testScenario;
-    const res = await fetch(`${settings.apiBase}${path}`, { headers });
+    const res = await hmrcFetch(`${settings.apiBase}${path}`, { headers });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw new HmrcError(res.status, body);
     return body;
@@ -81,7 +89,7 @@ function createClient(settings) {
 
   // Submits one VAT return. HMRC sends the receipt details back in headers as well as the body.
   async function submitReturn(vrn, body, { accessToken, fraudHeaders }) {
-    const res = await fetch(`${settings.apiBase}${vatPath(vrn)}/returns`, {
+    const res = await hmrcFetch(`${settings.apiBase}${vatPath(vrn)}/returns`, {
       method: 'POST',
       headers: {
         Accept: 'application/vnd.hmrc.1.0+json',
@@ -109,7 +117,7 @@ function createClient(settings) {
   const AGENT_AUTH_SERVICE = agentAuthVersion === '1.0' ? ['MTD-VAT'] : 'MTD-VAT';
 
   async function createInvitation(arn, vrn, knownFact, { accessToken, fraudHeaders }) {
-    const res = await fetch(`${settings.apiBase}/agents/${encodeURIComponent(arn)}/invitations`, {
+    const res = await hmrcFetch(`${settings.apiBase}/agents/${encodeURIComponent(arn)}/invitations`, {
       method: 'POST',
       headers: {
         Accept: AGENT_AUTH_ACCEPT,
@@ -133,7 +141,7 @@ function createClient(settings) {
   }
 
   async function getInvitation(arn, invitationId, { accessToken, fraudHeaders }) {
-    const res = await fetch(`${settings.apiBase}/agents/${encodeURIComponent(arn)}/invitations/${encodeURIComponent(invitationId)}`, {
+    const res = await hmrcFetch(`${settings.apiBase}/agents/${encodeURIComponent(arn)}/invitations/${encodeURIComponent(invitationId)}`, {
       headers: { Accept: AGENT_AUTH_ACCEPT, Authorization: `Bearer ${accessToken}`, ...fraudHeaders },
     });
     const body = await res.json().catch(() => ({}));
@@ -147,7 +155,7 @@ function createClient(settings) {
 
   async function checkVatNumber(vrn) {
     if (!appToken || Date.now() > appToken.expiresAt - 60 * 1000) appToken = await applicationToken();
-    const res = await fetch(`${settings.apiBase}/organisations/vat/check-vat-number/lookup/${encodeURIComponent(vrn)}`, {
+    const res = await hmrcFetch(`${settings.apiBase}/organisations/vat/check-vat-number/lookup/${encodeURIComponent(vrn)}`, {
       headers: { Accept: 'application/vnd.hmrc.2.0+json', Authorization: `Bearer ${appToken.accessToken}` },
     });
     const body = await res.json().catch(() => ({}));
@@ -161,7 +169,7 @@ function createClient(settings) {
   // Sandbox only. Needs the "Create Test User" API added to the sandbox app.
   async function createTestUser(kind, serviceNames) {
     const { accessToken } = await applicationToken();
-    const res = await fetch(`${settings.apiBase}/create-test-user/${kind}`, {
+    const res = await hmrcFetch(`${settings.apiBase}/create-test-user/${kind}`, {
       method: 'POST',
       headers: {
         Accept: 'application/vnd.hmrc.1.0+json',
@@ -187,7 +195,7 @@ function createClient(settings) {
   // Sandbox only: accepts an invitation as if the client had approved it.
   // The Agent Authorisation Test Support API is open access, so no token or subscription is needed.
   async function acceptTestInvitation(invitationId) {
-    const res = await fetch(`${settings.apiBase}/agent-authorisation-test-support/invitations/${encodeURIComponent(invitationId)}`, {
+    const res = await hmrcFetch(`${settings.apiBase}/agent-authorisation-test-support/invitations/${encodeURIComponent(invitationId)}`, {
       method: 'PUT',
       headers: { Accept: 'application/vnd.hmrc.1.0+json' },
     });
