@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { validateBoxes, toHmrcBody, netDirection } = require('../src/vatReturn');
+const { validateBoxes, toHmrcBody, netDirection, toNumber } = require('../src/vatReturn');
 
 const good = { 1: 123, 2: 0, 3: 123, 4: 0, 5: 123, 6: 615, 7: 0, 8: 0, 9: 0 };
 
@@ -32,6 +32,17 @@ test('box 5 is the difference either way, so reclaims work', () => {
   const { boxes, errors } = validateBoxes(values);
   assert.deepStrictEqual(errors, []);
   assert.strictEqual(netDirection(boxes), 'reclaim');
+});
+
+test('rejects hex and scientific notation instead of treating them as amounts', () => {
+  assert.ok(Number.isNaN(toNumber('0x10')));
+  assert.ok(Number.isNaN(toNumber('1e3')));
+  assert.ok(Number.isNaN(toNumber('0b10')));
+  assert.ok(Number.isNaN(toNumber('1.2.3')));
+  assert.strictEqual(toNumber('-12.50'), -12.5);
+  assert.strictEqual(toNumber(16), 16);
+  const { errors } = validateBoxes({ ...good, 1: '0x10' });
+  assert.ok(errors.some((e) => e.startsWith('Box 1 is not a number')));
 });
 
 test('flags empty boxes, pence in boxes 6 to 9, and too many decimals', () => {

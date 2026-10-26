@@ -15,11 +15,12 @@ const BOXES = [
 const MAX = { pence: 9999999999999.99, pounds: 9999999999999, box5: 99999999999.99 };
 
 // Turns a cell value into a number, accepting things like "£1,234.50".
+// Only a plain decimal. Number("0x10") is 16 and Number("1e3") is 1000, which are not VAT amounts.
 function toNumber(value) {
   if (typeof value === 'number') return value;
   if (typeof value !== 'string') return NaN;
   const cleaned = value.replace(/[£,\s]/g, '');
-  if (cleaned === '') return NaN;
+  if (!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(cleaned)) return NaN;
   return Number(cleaned);
 }
 
