@@ -34,6 +34,54 @@ test('submits a return with the receipt headers and reports HMRC errors', async 
   });
 });
 
+test('gives up if HMRC does not answer in time', async () => {
+  const orig = global.fetch;
+  global.fetch = (url, opts) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve(new Response('{}', { status: 200 })), 5000);
+    opts.signal.addEventListener('abort', () => {
+      clearTimeout(timer);
+      reject(opts.signal.reason);
+    });
+  });
+  try {
+    const client = hmrc.createClient({ ...settings, timeoutMs: 40 });
+    await assert.rejects(
+      client.getObligations('123456789', { from: '2026-01-01', to: '2026-03-31' }, { accessToken: 't' }),
+      (err) => err.name === 'TimeoutError',
+    );
+  } finally {
+    global.fetch = orig;
+  }
+});
+
+test('limits each HMRC request to 20 seconds unless the app chooses another limit', async () => {
+  const origFetch = global.fetch;
+  const origTimeout = AbortSignal.timeout;
+  const seen = [];
+  AbortSignal.timeout = (ms) => {
+    seen.push(ms);
+    return origTimeout(ms);
+  };
+  global.fetch = async (url, opts) => {
+    assert.ok(opts.signal instanceof AbortSignal);
+    assert.strictEqual(opts.signal.aborted, false);
+    return new Response(JSON.stringify({ access_token: 'a', refresh_token: 'r', expires_in: 1 }), { status: 200 });
+  };
+  try {
+    await hmrc.createClient(settings).applicationToken();
+    await hmrc.createClient({ ...settings, timeoutMs: 5000 }).applicationToken();
+    global.fetch = async (url, opts) => {
+      assert.strictEqual(opts.signal, undefined);
+      return new Response(JSON.stringify({ access_token: 'a', refresh_token: 'r', expires_in: 1 }), { status: 200 });
+    };
+    await hmrc.createClient({ ...settings, timeoutMs: 0 }).applicationToken();
+    assert.deepStrictEqual(seen, [20000, 5000]);
+  } finally {
+    AbortSignal.timeout = origTimeout;
+    global.fetch = origFetch;
+  }
+});
+
 test('reads browser details for the fraud headers', () => {
   const d = hmrc.readDevice({ timezoneOffset: -60, screen: { width: '1920', height: 1080 }, userAgent: 'UA', doNotTrack: true });
   assert.deepStrictEqual([d.timezone, d.screen.width, d.userAgent, d.doNotTrack], ['UTC+01:00', 1920, 'UA', true]);
