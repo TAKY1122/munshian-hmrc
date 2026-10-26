@@ -76,10 +76,14 @@ function netDirection(boxes) {
 }
 
 // The JSON body for HMRC's "Submit VAT return for period" endpoint.
+// HMRC rejects a return unless finalised is true, which is the user's declaration.
 function toHmrcBody(periodKey, boxes, finalised) {
+  if (finalised !== true) {
+    throw new Error('HMRC only accepts a VAT return with finalised set to true');
+  }
   const body = { periodKey };
   for (const b of BOXES) body[b.field] = boxes[b.box];
-  body.finalised = finalised;
+  body.finalised = true;
   return body;
 }
 

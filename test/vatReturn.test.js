@@ -41,6 +41,12 @@ test('flags empty boxes, pence in boxes 6 to 9, and too many decimals', () => {
   assert.ok(errors.includes('Box 1 can have at most 2 decimal places'));
 });
 
+test('refuses to build a return that is not finalised', () => {
+  const { boxes } = validateBoxes(good);
+  assert.throws(() => toHmrcBody('18A2', boxes, false), /finalised set to true/);
+  assert.throws(() => toHmrcBody('18A2', boxes), /finalised set to true/);
+});
+
 test('maps boxes to the field names HMRC expects', () => {
   const { boxes } = validateBoxes(good);
   assert.deepStrictEqual(toHmrcBody('18A2', boxes, true), {
