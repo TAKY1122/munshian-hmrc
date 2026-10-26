@@ -100,6 +100,28 @@ test('checks the VAT number, period key and agent reference before calling HMRC'
   }
 });
 
+test('refuses sandbox helpers against the live HMRC API', async () => {
+  const orig = global.fetch;
+  let calls = 0;
+  global.fetch = async () => {
+    calls += 1;
+    return new Response('{}', { status: 200 });
+  };
+  const live = hmrc.createClient({ ...settings, ...hmrc.HOSTS.production });
+  const sandbox = hmrc.createClient(settings);
+  try {
+    await assert.rejects(() => live.createTestAgent(), /sandbox/);
+    await assert.rejects(() => live.createTestVatClient(), /sandbox/);
+    await assert.rejects(() => live.acceptTestInvitation('ABC'), /sandbox/);
+    await assert.rejects(() => live.validateFraudHeaders({ accessToken: 't' }), /sandbox/);
+    assert.strictEqual(calls, 0);
+    await sandbox.acceptTestInvitation('ABC');
+    assert.strictEqual(calls, 1);
+  } finally {
+    global.fetch = orig;
+  }
+});
+
 test('limits each HMRC request to 20 seconds unless the app chooses another limit', async () => {
   const origFetch = global.fetch;
   const origTimeout = AbortSignal.timeout;
