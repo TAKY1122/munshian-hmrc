@@ -17,6 +17,30 @@ class HmrcError extends Error {
   }
 }
 
+// HMRC's VAT APIs take the 9-digit number, without a GB prefix.
+function normaliseVrn(vrn) {
+  const raw = String(vrn ?? '').replace(/\s+/g, '').toUpperCase();
+  const digits = raw.startsWith('GB') ? raw.slice(2) : raw;
+  if (!/^\d{9}$/.test(digits)) throw new Error('VAT number must be 9 digits');
+  return digits;
+}
+
+// HMRC's own check is that this is the 4-character id from the obligation. It can include #.
+function assertPeriodKey(periodKey) {
+  if (typeof periodKey !== 'string' || periodKey.length !== 4 || /[\s\u0000-\u001F\u007F]/.test(periodKey)) {
+    throw new Error('Period key must be the 4-character code from the HMRC obligation');
+  }
+}
+
+// HMRC's agent-mtd-identifiers accepts TARN0000001 and rejects TABC0000001. AARN and XARN are used too.
+function normaliseArn(arn) {
+  const value = String(arn ?? '').trim().toUpperCase();
+  if (!/^[A-Z]ARN\d{7}$/.test(value)) {
+    throw new Error('Agent reference number must be a letter, then ARN, then 7 digits (for example AARN0000002)');
+  }
+  return value;
+}
+
 function createClient(settings) {
   const timeoutMs = settings.timeoutMs === undefined ? 20000 : settings.timeoutMs;
 
@@ -69,9 +93,9 @@ function createClient(settings) {
     return body;
   }
 
-  const vatPath = (vrn) => `/organisations/vat/${encodeURIComponent(vrn)}`;
+  const vatPath = (vrn) => `/organisations/vat/${encodeURIComponent(normaliseVrn(vrn))}`;
 
-  function getObligations(vrn, { from, to, status }, opts) {
+  async function getObligations(vrn, { from, to, status }, opts) {
     const params = new URLSearchParams();
     if (from) params.set('from', from);
     if (to) params.set('to', to);
@@ -79,16 +103,17 @@ function createClient(settings) {
     return apiGet(`${vatPath(vrn)}/obligations?${params}`, opts);
   }
 
-  function getLiabilities(vrn, { from, to }, opts) {
+  async function getLiabilities(vrn, { from, to }, opts) {
     return apiGet(`${vatPath(vrn)}/liabilities?${new URLSearchParams({ from, to })}`, opts);
   }
 
-  function getPayments(vrn, { from, to }, opts) {
+  async function getPayments(vrn, { from, to }, opts) {
     return apiGet(`${vatPath(vrn)}/payments?${new URLSearchParams({ from, to })}`, opts);
   }
 
   // Submits one VAT return. HMRC sends the receipt details back in headers as well as the body.
   async function submitReturn(vrn, body, { accessToken, fraudHeaders }) {
+    assertPeriodKey(body && body.periodKey);
     const res = await hmrcFetch(`${settings.apiBase}${vatPath(vrn)}/returns`, {
       method: 'POST',
       headers: {
@@ -117,6 +142,8 @@ function createClient(settings) {
   const AGENT_AUTH_SERVICE = agentAuthVersion === '1.0' ? ['MTD-VAT'] : 'MTD-VAT';
 
   async function createInvitation(arn, vrn, knownFact, { accessToken, fraudHeaders }) {
+    arn = normaliseArn(arn);
+    vrn = normaliseVrn(vrn);
     const res = await hmrcFetch(`${settings.apiBase}/agents/${encodeURIComponent(arn)}/invitations`, {
       method: 'POST',
       headers: {
@@ -141,6 +168,7 @@ function createClient(settings) {
   }
 
   async function getInvitation(arn, invitationId, { accessToken, fraudHeaders }) {
+    arn = normaliseArn(arn);
     const res = await hmrcFetch(`${settings.apiBase}/agents/${encodeURIComponent(arn)}/invitations/${encodeURIComponent(invitationId)}`, {
       headers: { Accept: AGENT_AUTH_ACCEPT, Authorization: `Bearer ${accessToken}`, ...fraudHeaders },
     });
@@ -154,6 +182,7 @@ function createClient(settings) {
   let appToken = null;
 
   async function checkVatNumber(vrn) {
+    vrn = normaliseVrn(vrn);
     if (!appToken || Date.now() > appToken.expiresAt - 60 * 1000) appToken = await applicationToken();
     const res = await hmrcFetch(`${settings.apiBase}/organisations/vat/check-vat-number/lookup/${encodeURIComponent(vrn)}`, {
       headers: { Accept: 'application/vnd.hmrc.2.0+json', Authorization: `Bearer ${appToken.accessToken}` },

@@ -54,6 +54,52 @@ test('gives up if HMRC does not answer in time', async () => {
   }
 });
 
+test('checks the VAT number, period key and agent reference before calling HMRC', async () => {
+  const orig = global.fetch;
+  let calls = 0;
+  let lastUrl = '';
+  const token = () => new Response(JSON.stringify({ access_token: 'a', refresh_token: 'r', expires_in: 3600 }), { status: 200 });
+  global.fetch = async () => {
+    calls += 1;
+    return new Response('{}', { status: 404 });
+  };
+  const client = hmrc.createClient(settings);
+  const boxes = { 1: 1, 2: 0, 3: 1, 4: 0, 5: 1, 6: 5, 7: 0, 8: 0, 9: 0 };
+  try {
+    await assert.rejects(() => client.getObligations('12', {}, { accessToken: 't' }), /9 digits/);
+    await assert.rejects(() => client.submitReturn('123456789', { periodKey: '18A' }, { accessToken: 't' }), /4-character/);
+    await assert.rejects(() => client.createInvitation('TABC0000001', '123456789', '2020-01-01', { accessToken: 't' }), /Agent reference/);
+    await assert.rejects(() => client.getInvitation('nope', 'ABC', { accessToken: 't' }), /Agent reference/);
+    assert.strictEqual(calls, 0);
+
+    global.fetch = async (url) => {
+      lastUrl = url;
+      return new Response(JSON.stringify({}), { status: 201 });
+    };
+    await client.submitReturn('GB123456789', hmrc.toHmrcBody('#001', boxes, true), { accessToken: 't' });
+    assert.match(lastUrl, /\/organisations\/vat\/123456789\/returns$/);
+
+    global.fetch = async (url) => {
+      lastUrl = url;
+      if (String(url).endsWith('/oauth/token')) return token();
+      return new Response('{}', { status: 404 });
+    };
+    assert.strictEqual(await client.checkVatNumber('gb 123 4567 89'), null);
+    assert.match(lastUrl, /\/lookup\/123456789$/);
+
+    global.fetch = async (url) => {
+      lastUrl = url;
+      return new Response('{}', { status: 200 });
+    };
+    await client.getInvitation('tarn0000001', 'CS5AK7O8FPC43', { accessToken: 't' });
+    assert.match(lastUrl, /\/agents\/TARN0000001\/invitations\/CS5AK7O8FPC43$/);
+    await client.createInvitation('XARN1234567', '123456789', '2020-01-01', { accessToken: 't' });
+    assert.match(lastUrl, /\/agents\/XARN1234567\/invitations$/);
+  } finally {
+    global.fetch = orig;
+  }
+});
+
 test('limits each HMRC request to 20 seconds unless the app chooses another limit', async () => {
   const origFetch = global.fetch;
   const origTimeout = AbortSignal.timeout;
